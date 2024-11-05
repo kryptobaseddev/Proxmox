@@ -36,7 +36,7 @@ BFR="\\r\\033[K"
 HOLD="-"
 CM="${GN}✓${CL}"
 CROSS="${RD}✗${CL}"
-THIN="discard=on,ssd=1,"
+THIN="discard=on,ssd=1"
 set -e
 trap 'error_handler $LINENO "$BASH_COMMAND"' ERR
 trap cleanup EXIT
@@ -202,7 +202,7 @@ function advanced_settings() {
     3>&1 1>&2 2>&3); then
     if [ $DISK_CACHE = "1" ]; then
       echo -e "${DGN}Using Disk Cache: ${BGN}Write Through${CL}"
-      DISK_CACHE="cache=writethrough,"
+      DISK_CACHE="cache=writethrough"
     else
       echo -e "${DGN}Using Disk Cache: ${BGN}None${CL}"
       DISK_CACHE=""
@@ -403,6 +403,25 @@ if [ -z "$STORAGE_TYPE" ]; then
   exit 1
 fi
 
+# Adjust THIN and DISK_CACHE variables (remove any trailing commas)
+if [ -n "$DISK_CACHE" ]; then
+  DISK_CACHE="${DISK_CACHE%,}"
+fi
+THIN="${THIN%,}"
+
+# Build DISK_OPTIONS
+DISK_OPTIONS=""
+if [ -n "$DISK_CACHE" ]; then
+  DISK_OPTIONS="$DISK_CACHE"
+fi
+if [ -n "$THIN" ]; then
+  if [ -n "$DISK_OPTIONS" ]; then
+    DISK_OPTIONS="$DISK_OPTIONS,$THIN"
+  else
+    DISK_OPTIONS="$THIN"
+  fi
+fi
+
 msg_ok "Virtual Machine ID is ${CL}${BL}$VMID${CL}."
 msg_info "Retrieving the URL for the Debian 12 Qcow2 Disk Image"
 URL=https://cloud.debian.org/images/cloud/bookworm/daily/latest/debian-12-genericcloud-amd64-daily.qcow2
@@ -441,7 +460,7 @@ fi
 msg_info "Attaching disks to VM"
 qm set $VMID \
   -efidisk0 $STORAGE:0${FORMAT} \
-  -scsi0 $STORAGE:$IMPORTED_DISK${DISK_CACHE}${THIN} \
+  -scsi0 $STORAGE:$IMPORTED_DISK${DISK_OPTIONS:+,$DISK_OPTIONS} \
   -boot order=scsi0 \
   -serial0 socket \
   -description "<div align='center'>
