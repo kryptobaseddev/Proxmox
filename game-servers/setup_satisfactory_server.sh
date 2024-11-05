@@ -68,17 +68,24 @@ for pkg in "${PREREQS[@]}"; do
   check_and_install "$pkg"
 done
 
-# Enable 'contrib' and 'non-free' repositories
+# Add i386 architecture for 32-bit support
+header "Configuring Architecture"
+info "Adding i386 architecture support..."
+dpkg --add-architecture i386
+success "i386 architecture support added."
+
+# Enable 'non-free' and 'non-free-firmware' repositories using the workaround
 header "Configuring Repositories"
-info "Enabling 'contrib' and 'non-free' repositories..."
+info "Enabling 'non-free' and 'non-free-firmware' repositories using workaround..."
 
-# Backup the original sources.list
-if [ ! -f /etc/apt/sources.list.bak ]; then
-  cp /etc/apt/sources.list /etc/apt/sources.list.bak
-fi
+# Use add-apt-repository workaround to add non-free components
+info "Adding 'non-free' and 'non-free-firmware' components to repositories..."
 
-# Add 'contrib' and 'non-free' to each deb line if not already present
-sed -i '/^deb .* main/ s/main/main contrib non-free/' /etc/apt/sources.list
+# Run add-apt-repository with the necessary options
+add-apt-repository -y -n -U http://deb.debian.org/debian -c non-free -c non-free-firmware
+
+# Due to a bug, we need to run the command twice
+add-apt-repository -y -n -U http://deb.debian.org/debian -c non-free -c non-free-firmware
 
 # Update package lists
 apt-get update -qq
@@ -90,13 +97,6 @@ check_and_install "qemu-guest-agent"
 systemctl enable qemu-guest-agent > /dev/null
 systemctl start qemu-guest-agent
 success "QEMU Guest Agent installed and running."
-
-# Add i386 architecture for 32-bit support
-header "Configuring Architecture"
-info "Adding i386 architecture support..."
-dpkg --add-architecture i386
-apt-get update -qq
-success "i386 architecture support added."
 
 # Install dependencies for SteamCMD
 header "Installing Dependencies for SteamCMD"
