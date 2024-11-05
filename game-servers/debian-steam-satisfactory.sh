@@ -13,9 +13,9 @@ function header_info {
     \__ \/ __ \/ __/ / ___/ /_/ // ___/ __/ __ \/ ___/ / / /
    ___/ / /_/ / /_/ (__  ) __/ // /__/ /_/ /_/ / /  / /_/ / 
   /____/\____/\__/_/____/_/ /_/ \___/\__/\____/_/   \__, /  
-                                                    /____/   
-            Satisfactory Game Server
-            Running on Debian 12
+                                                      /____/   
+              Satisfactory Game Server
+              Running on Debian 12
 
 EOF
 }
@@ -85,7 +85,7 @@ function msg_error() {
 }
 
 function check_root() {
-  if [[ "$(id -u)" -ne 0 || $(ps -o comm= -p $PPID) == "sudo" ]]; then
+  if [[ "$(id -u)" -ne 0 ]]; then
     clear
     msg_error "Please run this script as root."
     echo -e "\nExiting..."
@@ -95,9 +95,9 @@ function check_root() {
 }
 
 function pve_check() {
-  if ! pveversion | grep -Eq "pve-manager/8.[1-3]"; then
+  if ! pveversion | grep -Eq "pve-manager/[6-8]\.[0-9]"; then
     msg_error "This version of Proxmox Virtual Environment is not supported"
-    echo -e "Requires Proxmox Virtual Environment Version 8.1 or later."
+    echo -e "Requires Proxmox Virtual Environment Version 6.0 or later."
     echo -e "Exiting..."
     sleep 2
     exit
@@ -137,10 +137,10 @@ function default_settings() {
   FORMAT=",efitype=4m"
   MACHINE=""
   DISK_CACHE=""
-  HN="satisfactory-server"  # Changed hostname
-  CPU_TYPE="host"           # Set CPU type to host
-  CORE_COUNT="8"            # Updated to 8 cores
-  RAM_SIZE="32768"          # Updated to 32GB RAM
+  HN="satisfactory-server"
+  CPU_TYPE="host"
+  CORE_COUNT="8"
+  RAM_SIZE="32768"
   BRG="vmbr0"
   MAC="$GEN_MAC"
   VLAN=""
@@ -357,35 +357,48 @@ ROOT_PASSWORD_HASH=$(echo "${ROOT_PASSWORD}" | openssl passwd -6 -stdin)
 STEAM_PASSWORD_HASH=$(echo "${STEAM_PASSWORD}" | openssl passwd -6 -stdin)
 
 msg_info "Validating Storage"
-while read -r line; do
-  TAG=$(echo $line | awk '{print $1}')
-  TYPE=$(echo $line | awk '{printf "%-10s", $2}')
-  CONTENT=$(echo $line | awk '{print $3}')
-  FREE=$(echo $line | numfmt --field 4-6 --from-unit=K --to=iec --format %.2f | awk '{printf( "%9sB", $6)}')
-  ITEM="  Type: $TYPE Free: $FREE "
-  OFFSET=2
-  if [[ $((${#ITEM} + $OFFSET)) -gt ${MSG_MAX_LENGTH:-} ]]; then
-    MSG_MAX_LENGTH=$((${#ITEM} + $OFFSET))
-  fi
-  if [[ $CONTENT == *"images"* ]]; then
-    STORAGE_MENU+=("$TAG" "$ITEM" "OFF")
-  fi
-  if [[ $CONTENT == *"snippets"* ]]; then
-    SNIPPETS_STORAGE+=("$TAG")
-  fi
-done < <(pvesm status -content images,snippets | awk 'NR>1')
 
-VALID=$(pvesm status -content images | awk 'NR>1')
-if [ -z "$VALID" ]; then
-  msg_error "Unable to detect a valid storage location."
-  exit
-elif [ $((${#STORAGE_MENU[@]} / 3)) -eq 1 ]; then
+STORAGE_MENU=()
+SNIPPETS_STORAGE=()
+
+while IFS= read -r line; do
+  if [[ $line =~ ^(dir|lvm|lvmthin|zfspool):\ (.+) ]]; then
+    TYPE=${BASH_REMATCH[1]}
+    TAG=${BASH_REMATCH[2]}
+    CONTENT=""
+  elif [[ $line =~ ^\s*content\ (.+) ]]; then
+    CONTENT=${BASH_REMATCH[1]}
+    if [[ $CONTENT == *"images"* ]]; then
+      ITEM="Type: $TYPE"
+      STORAGE_MENU+=("$TAG" "$ITEM" "OFF")
+    fi
+    if [[ $CONTENT == *"snippets"* ]]; then
+      SNIPPETS_STORAGE+=("$TAG")
+    fi
+  fi
+done < /etc/pve/storage.cfg
+
+# Check if any storage pools with 'images' content type are found
+if [ ${#STORAGE_MENU[@]} -eq 0 ]; then
+  msg_error "No storage pools with 'images' content type found."
+  echo -e "Please configure a storage pool with 'Disk image' enabled."
+  exit 1
+fi
+
+# Check if any storage pools with 'snippets' content type are found
+if [ ${#SNIPPETS_STORAGE[@]} -eq 0 ]; then
+  msg_error "No storage pools with 'snippets' content type found."
+  echo -e "Please configure a storage pool with 'Snippets' enabled."
+  exit 1
+fi
+
+if [ $((${#STORAGE_MENU[@]} / 3)) -eq 1 ]; then
   STORAGE=${STORAGE_MENU[0]}
 else
   while [ -z "${STORAGE:+x}" ]; do
     STORAGE=$(whiptail --backtitle "Proxmox VE Helper Scripts" --title "Storage Pools" --radiolist \
       "Which storage pool would you like to use for VM disks?\nTo make a selection, use the Spacebar.\n" \
-      16 $(($MSG_MAX_LENGTH + 23)) 6 \
+      16 58 6 \
       "${STORAGE_MENU[@]}" 3>&1 1>&2 2>&3) || exit
   done
 fi
@@ -417,7 +430,14 @@ nfs | dir)
   DISK_IMPORT="-format qcow2"
   THIN=""
   ;;
-btrfs)
+btrfs | lvmthin | zfspool)
+  DISK_EXT=".raw"
+  DISK_REF="$VMID/"
+  DISK_IMPORT="-format raw"
+  FORMAT=",efitype=4m"
+  THIN=""
+  ;;
+*)
   DISK_EXT=".raw"
   DISK_REF="$VMID/"
   DISK_IMPORT="-format raw"
