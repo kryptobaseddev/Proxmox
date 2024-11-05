@@ -440,45 +440,24 @@ msg_ok "VM $VMID created"
 
 # Allocate and attach the EFI disk
 EFI_DISK_SIZE="1M"
-EFI_DISK_REF="$STORAGE:vm-$VMID-disk-efi"
+EFI_DISK_REF="$STORAGE:vm-$VMID-disk-0"
 msg_info "Allocating EFI disk"
-pvesm alloc $STORAGE $VMID vm-$VMID-disk-efi $EFI_DISK_SIZE
-qm set $VMID -efidisk0 $EFI_DISK_REF${FORMAT}
+qm set $VMID -efidisk0 $EFI_DISK_REF,efitype=4m,size=$EFI_DISK_SIZE
 msg_ok "EFI disk allocated and attached"
 
 # Import the disk
-if [[ "$STORAGE_TYPE" == "dir" || "$STORAGE_TYPE" == "nfs" ]]; then
-  DISK_FORMAT="qcow2"
-else
-  DISK_FORMAT="raw"
-fi
-
 msg_info "Importing the disk image to storage"
-qm importdisk $VMID ${FILE} $STORAGE --format $DISK_FORMAT
+qm importdisk $VMID ${FILE} $STORAGE
 msg_ok "Disk image imported to storage"
 
-# Get the imported disk name
-IMPORTED_DISK=$(pvesm list $STORAGE --vmid $VMID | awk 'NR==1 {print $2}')
+# Attach the imported disk
+msg_info "Attaching imported disk to VM"
+qm set $VMID --scsi0 $STORAGE:vm-$VMID-disk-1${DISK_OPTIONS:+,$DISK_OPTIONS}
+msg_ok "Imported disk attached to VM"
 
-if [ -z "$IMPORTED_DISK" ]; then
-  msg_error "Failed to locate the imported disk."
-  exit 1
-fi
-
-# Attach the disk to the VM
-msg_info "Attaching disks to VM"
-qm set $VMID \
-  -scsi0 $STORAGE:$IMPORTED_DISK${DISK_OPTIONS:+,$DISK_OPTIONS} \
-  -boot order=scsi0 \
-  -serial0 socket \
-  -description "<div align='center'>
-
-  # Satisfactory Game Server
-  ## Debian 12 VM (SteamCMD)
-
-<script type='text/javascript' src='https://storage.ko-fi.com/cdn/widget/Widget_2.js'></script><script type='text/javascript'>kofiwidget2.init('Support me on Ko-fi', '#0d7d07', 'H2H815OTBU');kofiwidget2.draw();</script> 
-  </div>" >/dev/null
-msg_ok "Disks attached to VM"
+# Set the boot order
+qm set $VMID -boot order=scsi0
+msg_ok "Boot order set"
 
 # Cloud-Init Configuration
 
