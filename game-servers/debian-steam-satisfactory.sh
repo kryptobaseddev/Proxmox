@@ -13,9 +13,9 @@ function header_info {
     \__ \/ __ \/ __/ / ___/ /_/ // ___/ __/ __ \/ ___/ / / /
    ___/ / /_/ / /_/ (__  ) __/ // /__/ /_/ /_/ / /  / /_/ / 
   /____/\____/\__/_/____/_/ /_/ \___/\__/\____/_/   \__, /  
-                                                      /____/   
-              Satisfactory Game Server
-              Running on Debian 12
+                                                        /____/   
+                Satisfactory Game Server
+                Running on Debian 12
 
 EOF
 }
@@ -356,55 +356,51 @@ echo
 ROOT_PASSWORD_HASH=$(echo "${ROOT_PASSWORD}" | openssl passwd -6 -stdin)
 STEAM_PASSWORD_HASH=$(echo "${STEAM_PASSWORD}" | openssl passwd -6 -stdin)
 
-msg_info "Listing Available Storage Pools"
+# Prompt for storage pool names
+msg_info "Configuring Storage Pools"
 
-# List all storage pools
-STORAGE_OPTIONS=()
-while IFS= read -r line; do
-  if [[ $line =~ ^(dir|lvm|lvmthin|zfspool|nfs):\s*(\S+) ]]; then
-    TYPE=${BASH_REMATCH[1]}
-    TAG=${BASH_REMATCH[2]}
-    STORAGE_OPTIONS+=("$TAG" "Type: $TYPE" "OFF")
+while true; do
+  if STORAGE=$(whiptail --backtitle "Proxmox VE Helper Scripts" --inputbox "Enter the storage pool name for VM disks" 8 58 "local-lvm" --title "VM Disk Storage" --cancel-button Exit-Script 3>&1 1>&2 2>&3); then
+    if [ -z "$STORAGE" ]; then
+      msg_error "Storage pool name cannot be empty."
+      continue
+    fi
+    # Verify that the storage pool exists
+    if pvesm status --storage $STORAGE >/dev/null 2>&1; then
+      msg_ok "Using ${CL}${BL}$STORAGE${CL} ${GN}for VM disk storage."
+      break
+    else
+      msg_error "Storage pool '$STORAGE' does not exist."
+    fi
+  else
+    exit-script
   fi
-done < /etc/pve/storage.cfg
+done
 
-if [ ${#STORAGE_OPTIONS[@]} -eq 0 ]; then
-  msg_error "No storage pools found."
-  echo -e "Please configure a storage pool."
-  exit 1
-fi
-
-# Select storage for VM disks
-if [ $((${#STORAGE_OPTIONS[@]} / 3)) -eq 1 ]; then
-  STORAGE=${STORAGE_OPTIONS[0]}
-else
-  while [ -z "${STORAGE:+x}" ]; do
-    STORAGE=$(whiptail --backtitle "Proxmox VE Helper Scripts" --title "Select VM Disk Storage" --radiolist \
-      "Which storage pool would you like to use for VM disks?\nEnsure it has 'Disk image' content enabled.\nTo make a selection, use the Spacebar.\n" \
-      16 58 6 \
-      "${STORAGE_OPTIONS[@]}" 3>&1 1>&2 2>&3) || exit-script
-  done
-fi
-msg_ok "Using ${CL}${BL}$STORAGE${CL} ${GN}for VM disk storage."
-
-# Select storage for cloud-init snippets
-if [ $((${#STORAGE_OPTIONS[@]} / 3)) -eq 1 ]; then
-  CLOUDINIT_STORAGE=${STORAGE_OPTIONS[0]}
-else
-  while [ -z "${CLOUDINIT_STORAGE:+x}" ]; do
-    CLOUDINIT_STORAGE=$(whiptail --backtitle "Proxmox VE Helper Scripts" --title "Select Cloud-Init Storage" --radiolist \
-      "Which storage pool would you like to use for cloud-init configuration?\nEnsure it has 'Snippets' content enabled.\nTo make a selection, use the Spacebar.\n" \
-      16 58 6 \
-      "${STORAGE_OPTIONS[@]}" 3>&1 1>&2 2>&3) || exit-script
-  done
-fi
-msg_ok "Using ${CL}${BL}$CLOUDINIT_STORAGE${CL} ${GN}for cloud-init storage."
+while true; do
+  if CLOUDINIT_STORAGE=$(whiptail --backtitle "Proxmox VE Helper Scripts" --inputbox "Enter the storage pool name for cloud-init configuration" 8 58 "local" --title "Cloud-Init Storage" --cancel-button Exit-Script 3>&1 1>&2 2>&3); then
+    if [ -z "$CLOUDINIT_STORAGE" ]; then
+      msg_error "Cloud-Init storage pool name cannot be empty."
+      continue
+    fi
+    # Verify that the storage pool exists
+    if pvesm status --storage $CLOUDINIT_STORAGE >/dev/null 2>&1; then
+      msg_ok "Using ${CL}${BL}$CLOUDINIT_STORAGE${CL} ${GN}for cloud-init storage."
+      break
+    else
+      msg_error "Storage pool '$CLOUDINIT_STORAGE' does not exist."
+    fi
+  else
+    exit-script
+  fi
+done
 
 # Get storage type
-STORAGE_TYPE=$(pvesm status -storage $STORAGE | awk 'NR>1 {print $2}')
+STORAGE_TYPE=$(pvesm status --storage $STORAGE | awk 'NR>1 {print $2}')
+
 if [ -z "$STORAGE_TYPE" ]; then
-  # If pvesm status doesn't return a storage type, get it from storage.cfg
-  STORAGE_TYPE=$(grep -A1 "^.*$STORAGE" /etc/pve/storage.cfg | grep "^type" | awk '{print $2}')
+  msg_error "Failed to determine the storage type for $STORAGE."
+  exit 1
 fi
 
 msg_ok "Virtual Machine ID is ${CL}${BL}$VMID${CL}."
