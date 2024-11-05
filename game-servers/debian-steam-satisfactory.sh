@@ -344,13 +344,35 @@ pve_check
 ssh_check
 start_script
 
-# Prompt for passwords
-echo -e "${YW}Please enter the root password:${CL}"
-read -s ROOT_PASSWORD
-echo
-echo -e "${YW}Please enter the steam user password:${CL}"
-read -s STEAM_PASSWORD
-echo
+# Prompt for root password with verification
+while true; do
+  echo -e "${YW}Please enter the root password:${CL}"
+  read -s ROOT_PASSWORD
+  echo
+  echo -e "${YW}Please verify root password:${CL}"
+  read -s ROOT_PASSWORD_VERIFY
+  echo
+  if [ "$ROOT_PASSWORD" = "$ROOT_PASSWORD_VERIFY" ]; then
+    break
+  else
+    echo -e "${RD}Passwords do not match. Please try again.${CL}"
+  fi
+done
+
+# Prompt for steam user password with verification
+while true; do
+  echo -e "${YW}Please enter the steam user password:${CL}"
+  read -s STEAM_PASSWORD
+  echo
+  echo -e "${YW}Please verify steam user password:${CL}"
+  read -s STEAM_PASSWORD_VERIFY
+  echo
+  if [ "$STEAM_PASSWORD" = "$STEAM_PASSWORD_VERIFY" ]; then
+    break
+  else
+    echo -e "${RD}Passwords do not match. Please try again.${CL}"
+  fi
+done
 
 # Hash the passwords
 ROOT_PASSWORD_HASH=$(echo "${ROOT_PASSWORD}" | openssl passwd -6 -stdin)
@@ -500,13 +522,20 @@ disable_root: False
 package_update: true
 package_upgrade: true
 
+packages:
+  - qemu-guest-agent
+  - steamcmd
+  - lib32gcc-s1
+
 runcmd:
   - |
+    systemctl enable qemu-guest-agent
+    systemctl start qemu-guest-agent
+
     echo "Adding non-free repository"
     sed -i '/^deb .* main$/ s/$/ non-free/' /etc/apt/sources.list
     dpkg --add-architecture i386
     apt-get update
-    apt-get install -y steamcmd lib32gcc-s1
 
     echo "Creating Satisfactory server directory"
     mkdir -p /home/steam/SatisfactoryDedicatedServer
