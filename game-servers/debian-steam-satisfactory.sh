@@ -361,19 +361,28 @@ msg_info "Validating Storage"
 STORAGE_MENU=()
 SNIPPETS_STORAGE=()
 
+declare -A storages
+
+current_storage=""
 while IFS= read -r line; do
-  if [[ $line =~ ^(dir|lvm|lvmthin|zfspool):\ (.+) ]]; then
+  # Match storage definitions
+  if [[ $line =~ ^(dir|lvm|lvmthin|zfspool):\s*(\S+) ]]; then
     TYPE=${BASH_REMATCH[1]}
     TAG=${BASH_REMATCH[2]}
-    CONTENT=""
-  elif [[ $line =~ ^\s*content\ (.+) ]]; then
+    storages[$TAG,type]=$TYPE
+    current_storage=$TAG
+  # Match content definitions
+  elif [[ $line =~ ^\s*content\s+(.+) ]]; then
     CONTENT=${BASH_REMATCH[1]}
+    storages[$current_storage,content]=$CONTENT
+    # Check for 'images' content type
     if [[ $CONTENT == *"images"* ]]; then
-      ITEM="Type: $TYPE"
-      STORAGE_MENU+=("$TAG" "$ITEM" "OFF")
+      ITEM="Type: ${storages[$current_storage,type]}"
+      STORAGE_MENU+=("$current_storage" "$ITEM" "OFF")
     fi
+    # Check for 'snippets' content type
     if [[ $CONTENT == *"snippets"* ]]; then
-      SNIPPETS_STORAGE+=("$TAG")
+      SNIPPETS_STORAGE+=("$current_storage")
     fi
   fi
 done < /etc/pve/storage.cfg
@@ -392,6 +401,7 @@ if [ ${#SNIPPETS_STORAGE[@]} -eq 0 ]; then
   exit 1
 fi
 
+# Storage selection for VM disks
 if [ $((${#STORAGE_MENU[@]} / 3)) -eq 1 ]; then
   STORAGE=${STORAGE_MENU[0]}
 else
@@ -404,13 +414,21 @@ else
 fi
 msg_ok "Using ${CL}${BL}$STORAGE${CL} ${GN}for VM disk storage."
 
-# Select storage for snippets
+# Storage selection for cloud-init snippets
 if [ ${#SNIPPETS_STORAGE[@]} -eq 1 ]; then
   CLOUDINIT_STORAGE=${SNIPPETS_STORAGE[0]}
 else
-  CLOUDINIT_STORAGE="local"
+  # Prefer 'local' storage if available
+  if [[ " ${SNIPPETS_STORAGE[@]} " =~ " local " ]]; then
+    CLOUDINIT_STORAGE="local"
+  else
+    CLOUDINIT_STORAGE="${SNIPPETS_STORAGE[0]}"
+  fi
 fi
 msg_ok "Using ${CL}${BL}$CLOUDINIT_STORAGE${CL} ${GN}for cloud-init storage."
+
+# Get storage type from the associative array
+STORAGE_TYPE=${storages[$STORAGE,type]}
 
 msg_ok "Virtual Machine ID is ${CL}${BL}$VMID${CL}."
 msg_info "Retrieving the URL for the Debian 12 Qcow2 Disk Image"
@@ -422,7 +440,6 @@ echo -en "\e[1A\e[0K"
 FILE=$(basename $URL)
 msg_ok "Downloaded ${CL}${BL}${FILE}${CL}"
 
-STORAGE_TYPE=$(pvesm status -storage $STORAGE | awk 'NR>1 {print $2}')
 case $STORAGE_TYPE in
 nfs | dir)
   DISK_EXT=".qcow2"
@@ -432,14 +449,14 @@ nfs | dir)
   ;;
 btrfs | lvmthin | zfspool)
   DISK_EXT=".raw"
-  DISK_REF="$VMID/"
+  DISK_REF=""
   DISK_IMPORT="-format raw"
   FORMAT=",efitype=4m"
   THIN=""
   ;;
 *)
   DISK_EXT=".raw"
-  DISK_REF="$VMID/"
+  DISK_REF=""
   DISK_IMPORT="-format raw"
   FORMAT=",efitype=4m"
   THIN=""
@@ -454,7 +471,7 @@ done
 msg_info "Creating a Debian 12 VM"
 qm create $VMID -agent 1${MACHINE} -tablet 0 -localtime 1 -bios ovmf -cpu $CPU_TYPE -cores $CORE_COUNT -memory $RAM_SIZE \
   -name $HN -tags gameserver-steam -net0 virtio,bridge=$BRG,macaddr=$MAC$VLAN$MTU -onboot 1 -ostype l26 -scsihw virtio-scsi-pci \
-  -ide2 $STORAGE:cloudinit
+  -ide2 $CLOUDINIT_STORAGE:cloudinit
 pvesm alloc $STORAGE $VMID $DISK0 4M 1>&/dev/null
 qm importdisk $VMID ${FILE} $STORAGE ${DISK_IMPORT:-} 1>&/dev/null
 qm set $VMID \
