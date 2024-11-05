@@ -440,9 +440,11 @@ msg_ok "VM $VMID created"
 
 # Allocate and attach the EFI disk
 EFI_DISK_SIZE="1M"
-EFI_DISK_REF="$STORAGE:vm-$VMID-disk-0"
+EFI_DISK_NAME="vm-$VMID-efidisk0"
+EFI_DISK_REF="$STORAGE:$EFI_DISK_NAME"
 msg_info "Allocating EFI disk"
-qm set $VMID -efidisk0 $EFI_DISK_REF,efitype=4m,size=$EFI_DISK_SIZE
+pvesm alloc $STORAGE $VMID $EFI_DISK_NAME $EFI_DISK_SIZE
+qm set $VMID -efidisk0 $EFI_DISK_REF,efitype=4m
 msg_ok "EFI disk allocated and attached"
 
 # Import the disk
@@ -452,7 +454,10 @@ msg_ok "Disk image imported to storage"
 
 # Attach the imported disk
 msg_info "Attaching imported disk to VM"
-qm set $VMID --scsi0 $STORAGE:vm-$VMID-disk-1${DISK_OPTIONS:+,$DISK_OPTIONS}
+# Find the imported disk name (exclude EFI disk)
+IMPORTED_DISK_NAME=$(pvesm list $STORAGE --vmid $VMID | awk '{print $2}' | grep -v $EFI_DISK_NAME | head -n 1)
+IMPORTED_DISK_REF="$STORAGE:$IMPORTED_DISK_NAME"
+qm set $VMID --scsi0 $IMPORTED_DISK_REF${DISK_OPTIONS:+,$DISK_OPTIONS}
 msg_ok "Imported disk attached to VM"
 
 # Set the boot order
