@@ -101,7 +101,7 @@ function pve_check() {
     echo -e "Exiting..."
     sleep 2
     exit
-fi
+  fi
 }
 
 function arch_check() {
@@ -238,9 +238,9 @@ function advanced_settings() {
     exit-script
   fi
 
-  if CORE_COUNT=$(whiptail --backtitle "Proxmox VE Helper Scripts" --inputbox "Allocate CPU Cores" 8 58 4 --title "CORE COUNT" --cancel-button Exit-Script 3>&1 1>&2 2>&3); then
+  if CORE_COUNT=$(whiptail --backtitle "Proxmox VE Helper Scripts" --inputbox "Allocate CPU Cores" 8 58 8 --title "CORE COUNT" --cancel-button Exit-Script 3>&1 1>&2 2>&3); then
     if [ -z $CORE_COUNT ]; then
-      CORE_COUNT="4"
+      CORE_COUNT="8"
       echo -e "${DGN}Allocated Cores: ${BGN}$CORE_COUNT${CL}"
     else
       echo -e "${DGN}Allocated Cores: ${BGN}$CORE_COUNT${CL}"
@@ -249,9 +249,9 @@ function advanced_settings() {
     exit-script
   fi
 
-  if RAM_SIZE=$(whiptail --backtitle "Proxmox VE Helper Scripts" --inputbox "Allocate RAM in MiB" 8 58 16384 --title "RAM" --cancel-button Exit-Script 3>&1 1>&2 2>&3); then
+  if RAM_SIZE=$(whiptail --backtitle "Proxmox VE Helper Scripts" --inputbox "Allocate RAM in MiB" 8 58 32768 --title "RAM" --cancel-button Exit-Script 3>&1 1>&2 2>&3); then
     if [ -z $RAM_SIZE ]; then
-      RAM_SIZE="16384"
+      RAM_SIZE="32768"
       echo -e "${DGN}Allocated RAM: ${BGN}$RAM_SIZE${CL}"
     else
       echo -e "${DGN}Allocated RAM: ${BGN}$RAM_SIZE${CL}"
@@ -283,7 +283,7 @@ function advanced_settings() {
     exit-script
   fi
 
-  if VLAN1=$(whiptail --backtitle "Proxmox VE Helper Scripts" --inputbox "Set a Vlan(leave blank for default)" 8 58 --title "VLAN" --cancel-button Exit-Script 3>&1 1>&2 2>&3); then
+  if VLAN1=$(whiptail --backtitle "Proxmox VE Helper Scripts" --inputbox "Set a Vlan (leave blank for default)" 8 58 --title "VLAN" --cancel-button Exit-Script 3>&1 1>&2 2>&3); then
     if [ -z $VLAN1 ]; then
       VLAN1="Default"
       VLAN=""
@@ -344,18 +344,37 @@ pve_check
 ssh_check
 start_script
 
+# Prompt for passwords
+echo -e "${YW}Please enter the root password:${CL}"
+read -s ROOT_PASSWORD
+echo
+echo -e "${YW}Please enter the steam user password:${CL}"
+read -s STEAM_PASSWORD
+echo
+
+# Hash the passwords
+ROOT_PASSWORD_HASH=$(echo "${ROOT_PASSWORD}" | openssl passwd -6 -stdin)
+STEAM_PASSWORD_HASH=$(echo "${STEAM_PASSWORD}" | openssl passwd -6 -stdin)
+
 msg_info "Validating Storage"
 while read -r line; do
   TAG=$(echo $line | awk '{print $1}')
   TYPE=$(echo $line | awk '{printf "%-10s", $2}')
+  CONTENT=$(echo $line | awk '{print $3}')
   FREE=$(echo $line | numfmt --field 4-6 --from-unit=K --to=iec --format %.2f | awk '{printf( "%9sB", $6)}')
   ITEM="  Type: $TYPE Free: $FREE "
   OFFSET=2
   if [[ $((${#ITEM} + $OFFSET)) -gt ${MSG_MAX_LENGTH:-} ]]; then
     MSG_MAX_LENGTH=$((${#ITEM} + $OFFSET))
   fi
-  STORAGE_MENU+=("$TAG" "$ITEM" "OFF")
-done < <(pvesm status -content images | awk 'NR>1')
+  if [[ $CONTENT == *"images"* ]]; then
+    STORAGE_MENU+=("$TAG" "$ITEM" "OFF")
+  fi
+  if [[ $CONTENT == *"snippets"* ]]; then
+    SNIPPETS_STORAGE+=("$TAG")
+  fi
+done < <(pvesm status -content images,snippets | awk 'NR>1')
+
 VALID=$(pvesm status -content images | awk 'NR>1')
 if [ -z "$VALID" ]; then
   msg_error "Unable to detect a valid storage location."
@@ -365,12 +384,21 @@ elif [ $((${#STORAGE_MENU[@]} / 3)) -eq 1 ]; then
 else
   while [ -z "${STORAGE:+x}" ]; do
     STORAGE=$(whiptail --backtitle "Proxmox VE Helper Scripts" --title "Storage Pools" --radiolist \
-      "Which storage pool you would like to use for ${HN}?\nTo make a selection, use the Spacebar.\n" \
+      "Which storage pool would you like to use for VM disks?\nTo make a selection, use the Spacebar.\n" \
       16 $(($MSG_MAX_LENGTH + 23)) 6 \
       "${STORAGE_MENU[@]}" 3>&1 1>&2 2>&3) || exit
   done
 fi
-msg_ok "Using ${CL}${BL}$STORAGE${CL} ${GN}for Storage Location."
+msg_ok "Using ${CL}${BL}$STORAGE${CL} ${GN}for VM disk storage."
+
+# Select storage for snippets
+if [ ${#SNIPPETS_STORAGE[@]} -eq 1 ]; then
+  CLOUDINIT_STORAGE=${SNIPPETS_STORAGE[0]}
+else
+  CLOUDINIT_STORAGE="local"
+fi
+msg_ok "Using ${CL}${BL}$CLOUDINIT_STORAGE${CL} ${GN}for cloud-init storage."
+
 msg_ok "Virtual Machine ID is ${CL}${BL}$VMID${CL}."
 msg_info "Retrieving the URL for the Debian 12 Qcow2 Disk Image"
 URL=https://cloud.debian.org/images/cloud/bookworm/daily/latest/debian-12-genericcloud-amd64-daily.qcow2
@@ -423,7 +451,6 @@ qm set $VMID \
   </div>" >/dev/null
 
 # Cloud-Init Configuration
-CLOUDINIT_STORAGE="$STORAGE"
 
 mkdir -p /var/lib/vz/snippets
 
@@ -434,7 +461,18 @@ users:
     sudo: ['ALL=(ALL) NOPASSWD:ALL']
     shell: /bin/bash
     groups: sudo
-    lock_passwd: true
+    lock_passwd: false
+    passwd: ${STEAM_PASSWORD_HASH}
+
+chpasswd:
+  list: |
+    root:${ROOT_PASSWORD_HASH}
+  expire: False
+  encrypted: True
+
+ssh_pwauth: True
+
+disable_root: False
 
 package_update: true
 package_upgrade: true
@@ -476,7 +514,7 @@ EOL
     systemctl start satisfactory.service
 EOF
 
-qm set $VMID --cicustom "user=$CLOUDINIT_STORAGE:snippets/user-data-$VMID.yaml"
+qm set $VMID --cicustom "user=${CLOUDINIT_STORAGE}:snippets/user-data-$VMID.yaml"
 
 msg_ok "Created a Debian 12 VM ${CL}${BL}(${HN}) with SteamCMD and Satisfactory Dedicated Server"
 echo -e "\nVM Configuration:"
@@ -498,7 +536,7 @@ fi
 msg_ok "Satisfactory Server VM Setup Completed Successfully!\n"
 
 # Wait a few seconds for services to start
-sleep 5
+sleep 10
 
 # Get IP address
 IP_ADDRESS=$(qm guest exec $VMID -- ip -4 addr show | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '127.0.0.1' | head -n 1)
