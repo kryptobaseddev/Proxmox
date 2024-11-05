@@ -161,9 +161,170 @@ function default_settings() {
   echo -e "${BL}Creating a Debian 12 VM using the above default settings${CL}"
 }
 
+
 function advanced_settings() {
-  # [Advanced settings function remains unchanged]
-  # Include your advanced settings logic here
+  while true; do
+    if VMID=$(whiptail --backtitle "Proxmox VE Helper Scripts" --inputbox "Set Virtual Machine ID" 8 58 $NEXTID --title "VIRTUAL MACHINE ID" --cancel-button Exit-Script 3>&1 1>&2 2>&3); then
+      if [ -z "$VMID" ]; then
+        VMID="$NEXTID"
+      fi
+      if pct status "$VMID" &>/dev/null || qm status "$VMID" &>/dev/null; then
+        echo -e "${CROSS}${RD} ID $VMID is already in use${CL}"
+        sleep 2
+        continue
+      fi
+      echo -e "${DGN}Virtual Machine ID: ${BGN}$VMID${CL}"
+      break
+    else
+      exit-script
+    fi
+  done
+
+  if MACH=$(whiptail --backtitle "Proxmox VE Helper Scripts" --title "MACHINE TYPE" --radiolist --cancel-button Exit-Script "Choose Type" 10 58 2 \
+    "i440fx" "Machine i440fx" ON \
+    "q35" "Machine q35" OFF \
+    3>&1 1>&2 2>&3); then
+    if [ $MACH = q35 ]; then
+      echo -e "${DGN}Using Machine Type: ${BGN}$MACH${CL}"
+      FORMAT=""
+      MACHINE=" -machine q35"
+    else
+      echo -e "${DGN}Using Machine Type: ${BGN}$MACH${CL}"
+      FORMAT=",efitype=4m"
+      MACHINE=""
+    fi
+  else
+    exit-script
+  fi
+
+  if DISK_CACHE=$(whiptail --backtitle "Proxmox VE Helper Scripts" --title "DISK CACHE" --radiolist "Choose" --cancel-button Exit-Script 10 58 2 \
+    "0" "None (Default)" ON \
+    "1" "Write Through" OFF \
+    3>&1 1>&2 2>&3); then
+    if [ $DISK_CACHE = "1" ]; then
+      echo -e "${DGN}Using Disk Cache: ${BGN}Write Through${CL}"
+      DISK_CACHE="cache=writethrough"
+    else
+      echo -e "${DGN}Using Disk Cache: ${BGN}None${CL}"
+      DISK_CACHE=""
+    fi
+  else
+    exit-script
+  fi
+
+  if VM_NAME=$(whiptail --backtitle "Proxmox VE Helper Scripts" --inputbox "Set Hostname" 8 58 satisfactory-server --title "HOSTNAME" --cancel-button Exit-Script 3>&1 1>&2 2>&3); then
+    if [ -z $VM_NAME ]; then
+      HN="satisfactory-server"
+      echo -e "${DGN}Using Hostname: ${BGN}$HN${CL}"
+    else
+      HN=$(echo ${VM_NAME,,} | tr -d ' ')
+      echo -e "${DGN}Using Hostname: ${BGN}$HN${CL}"
+    fi
+  else
+    exit-script
+  fi
+
+  if CPU_TYPE1=$(whiptail --backtitle "Proxmox VE Helper Scripts" --title "CPU MODEL" --radiolist "Choose" --cancel-button Exit-Script 10 58 2 \
+    "0" "KVM64" OFF \
+    "1" "Host (Recommended)" ON \
+    3>&1 1>&2 2>&3); then
+    if [ $CPU_TYPE1 = "1" ]; then
+      echo -e "${DGN}Using CPU Model: ${BGN}Host${CL}"
+      CPU_TYPE="host"
+    else
+      echo -e "${DGN}Using CPU Model: ${BGN}KVM64${CL}"
+      CPU_TYPE="kvm64"
+    fi
+  else
+    exit-script
+  fi
+
+  if CORE_COUNT=$(whiptail --backtitle "Proxmox VE Helper Scripts" --inputbox "Allocate CPU Cores" 8 58 8 --title "CORE COUNT" --cancel-button Exit-Script 3>&1 1>&2 2>&3); then
+    if [ -z $CORE_COUNT ]; then
+      CORE_COUNT="8"
+      echo -e "${DGN}Allocated Cores: ${BGN}$CORE_COUNT${CL}"
+    else
+      echo -e "${DGN}Allocated Cores: ${BGN}$CORE_COUNT${CL}"
+    fi
+  else
+    exit-script
+  fi
+
+  if RAM_SIZE=$(whiptail --backtitle "Proxmox VE Helper Scripts" --inputbox "Allocate RAM in MiB" 8 58 32768 --title "RAM" --cancel-button Exit-Script 3>&1 1>&2 2>&3); then
+    if [ -z $RAM_SIZE ]; then
+      RAM_SIZE="32768"
+      echo -e "${DGN}Allocated RAM: ${BGN}$RAM_SIZE${CL}"
+    else
+      echo -e "${DGN}Allocated RAM: ${BGN}$RAM_SIZE${CL}"
+    fi
+  else
+    exit-script
+  fi
+
+  if BRG=$(whiptail --backtitle "Proxmox VE Helper Scripts" --inputbox "Set a Bridge" 8 58 vmbr0 --title "BRIDGE" --cancel-button Exit-Script 3>&1 1>&2 2>&3); then
+    if [ -z $BRG ]; then
+      BRG="vmbr0"
+      echo -e "${DGN}Using Bridge: ${BGN}$BRG${CL}"
+    else
+      echo -e "${DGN}Using Bridge: ${BGN}$BRG${CL}"
+    fi
+  else
+    exit-script
+  fi
+
+  if MAC1=$(whiptail --backtitle "Proxmox VE Helper Scripts" --inputbox "Set a MAC Address" 8 58 $GEN_MAC --title "MAC ADDRESS" --cancel-button Exit-Script 3>&1 1>&2 2>&3); then
+    if [ -z $MAC1 ]; then
+      MAC="$GEN_MAC"
+      echo -e "${DGN}Using MAC Address: ${BGN}$MAC${CL}"
+    else
+      MAC="$MAC1"
+      echo -e "${DGN}Using MAC Address: ${BGN}$MAC1${CL}"
+    fi
+  else
+    exit-script
+  fi
+
+  if VLAN1=$(whiptail --backtitle "Proxmox VE Helper Scripts" --inputbox "Set a Vlan (leave blank for default)" 8 58 --title "VLAN" --cancel-button Exit-Script 3>&1 1>&2 2>&3); then
+    if [ -z $VLAN1 ]; then
+      VLAN1="Default"
+      VLAN=""
+      echo -e "${DGN}Using Vlan: ${BGN}$VLAN1${CL}"
+    else
+      VLAN=",tag=$VLAN1"
+      echo -e "${DGN}Using Vlan: ${BGN}$VLAN1${CL}"
+    fi
+  else
+    exit-script
+  fi
+
+  if MTU1=$(whiptail --backtitle "Proxmox VE Helper Scripts" --inputbox "Set Interface MTU Size (leave blank for default)" 8 58 --title "MTU SIZE" --cancel-button Exit-Script 3>&1 1>&2 2>&3); then
+    if [ -z $MTU1 ]; then
+      MTU1="Default"
+      MTU=""
+      echo -e "${DGN}Using Interface MTU Size: ${BGN}$MTU1${CL}"
+    else
+      MTU=",mtu=$MTU1"
+      echo -e "${DGN}Using Interface MTU Size: ${BGN}$MTU1${CL}"
+    fi
+  else
+    exit-script
+  fi
+
+  if (whiptail --backtitle "Proxmox VE Helper Scripts" --title "START VIRTUAL MACHINE" --yesno "Start VM when completed?" 10 58); then
+    echo -e "${DGN}Start VM when completed: ${BGN}yes${CL}"
+    START_VM="yes"
+  else
+    echo -e "${DGN}Start VM when completed: ${BGN}no${CL}"
+    START_VM="no"
+  fi
+
+  if (whiptail --backtitle "Proxmox VE Helper Scripts" --title "ADVANCED SETTINGS COMPLETE" --yesno "Ready to create a Debian 12 VM?" --no-button Do-Over 10 58); then
+    echo -e "${RD}Creating a Debian 12 VM using the above advanced settings${CL}"
+  else
+    header_info
+    echo -e "${RD}Using Advanced Settings${CL}"
+    advanced_settings
+  fi
 }
 
 function start_script() {
