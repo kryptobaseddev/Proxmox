@@ -162,6 +162,8 @@ function default_settings() {
   echo -e "${BL}Creating a Debian 12 VM using the above default settings${CL}"
 }
 
+# Assuming advanced_settings function remains unchanged
+
 function advanced_settings() {
   while true; do
     if VMID=$(whiptail --backtitle "Proxmox VE Helper Scripts" --inputbox "Set Virtual Machine ID" 8 58 $NEXTID --title "VIRTUAL MACHINE ID" --cancel-button Exit-Script 3>&1 1>&2 2>&3); then
@@ -379,7 +381,7 @@ done
 ROOT_PASSWORD_HASH=$(echo "${ROOT_PASSWORD}" | openssl passwd -6 -stdin)
 STEAM_PASSWORD_HASH=$(echo "${STEAM_PASSWORD}" | openssl passwd -6 -stdin)
 
-# Storage Validation and Selection (from tteck script)
+# Storage Validation and Selection
 msg_info "Validating Storage"
 
 # Build a menu of storage options that support 'images'
@@ -422,71 +424,41 @@ msg_ok "Downloaded ${CL}${BL}${FILE}${CL}"
 
 # Determine storage type and adjust settings accordingly
 STORAGE_TYPE=$(pvesm status -storage $STORAGE | awk 'NR>1 {print $2}')
-case $STORAGE_TYPE in
-nfs | dir)
-  DISK_EXT=".qcow2"
-  DISK_REF="$VMID/"
-  DISK_IMPORT="-format qcow2"
-  THIN=""
-  ;;
-btrfs)
-  DISK_EXT=".raw"
-  DISK_REF="$VMID/"
-  DISK_IMPORT="-format raw"
-  FORMAT=",efitype=4m"
-  THIN=""
-  ;;
-lvmthin | lvm)
-  DISK_EXT=""
-  DISK_REF=""
-  DISK_IMPORT=""
-  ;;
-*)
-  DISK_EXT=""
-  DISK_REF=""
-  DISK_IMPORT=""
-  ;;
-esac
-
 # Prepare disk names and references
-for i in {0,1}; do
-  disk="DISK$i"
-  eval DISK${i}=vm-${VMID}-disk-${i}${DISK_EXT}
-  eval DISK${i}_REF=${STORAGE}:${DISK_REF}${!disk}
-done
+EFI_DISK_SIZE="4M"
+EFI_DISK_NAME="vm-${VMID}-efidisk0"
+EFI_DISK_REF="$STORAGE:$EFI_DISK_NAME"
 
 # Create VM and allocate disks
 msg_info "Creating a Debian 12 VM"
-qm create $VMID -agent 1${MACHINE} -tablet 0 -localtime 1 -bios ovmf -cpu $CPU_TYPE -cores $CORE_COUNT -memory $RAM_SIZE \
-  -name $HN -tags gameserver-steam -net0 virtio,bridge=$BRG,macaddr=$MAC$VLAN$MTU -onboot 1 -ostype l26 -scsihw virtio-scsi-pci \
+qm create $VMID -agent 1 -localtime 1 -bios ovmf -cpu $CPU_TYPE -cores $CORE_COUNT -memory $RAM_SIZE \
+  -name $HN -net0 virtio,bridge=$BRG,macaddr=$MAC$VLAN$MTU -onboot 1 -ostype l26 \
   -ide2 ${STORAGE}:cloudinit
-
-# Allocate EFI disk if needed
-if [ "$STORAGE_TYPE" = "lvmthin" ] || [ "$STORAGE_TYPE" = "lvm" ]; then
-  EFI_DISK_REF="${STORAGE}:0"
-  qm set $VMID -efidisk0 $EFI_DISK_REF$FORMAT
-else
-  pvesm alloc $STORAGE $VMID ${DISK0} 4M 1>&/dev/null
-  qm set $VMID -efidisk0 ${DISK0_REF}${FORMAT}
-fi
-
 msg_ok "VM $VMID created"
+
+# Allocate and attach the EFI disk
+msg_info "Allocating EFI disk"
+pvesm alloc $STORAGE $VMID $EFI_DISK_NAME $EFI_DISK_SIZE
+qm set $VMID -efidisk0 $EFI_DISK_REF,efitype=4m
+msg_ok "EFI disk allocated and attached"
 
 # Import the disk image
 msg_info "Importing the disk image to storage"
-qm importdisk $VMID ${FILE} $STORAGE ${DISK_IMPORT} 1>&/dev/null
+qm importdisk $VMID ${FILE} $STORAGE
 msg_ok "Disk image imported to storage"
 
 # Attach the imported disk
-msg_info "Attaching disks to VM"
-if [ "$STORAGE_TYPE" = "lvmthin" ] || [ "$STORAGE_TYPE" = "lvm" ]; then
-  # For LVM storage, imported disk is referenced directly
-  IMPORTED_DISK_REF=$(pvesm list $STORAGE | grep "vm-${VMID}-disk-" | awk '{print $1}' | head -n1)
-  qm set $VMID -scsi0 ${IMPORTED_DISK_REF},${DISK_CACHE}${THIN}size=50G
-else
-  qm set $VMID -scsi0 ${DISK1_REF},${DISK_CACHE}${THIN}size=50G
-fi
-qm set $VMID -boot order=scsi0 -serial0 socket \
+msg_info "Attaching imported disk to VM"
+# Exclude the EFI disk when listing disks
+IMPORTED_DISK_REF=$(pvesm list $STORAGE --vmid $VMID | awk '{print $1}' | grep -v "efidisk0" | head -n 1)
+qm set $VMID --scsi0 $IMPORTED_DISK_REF,${DISK_CACHE}${THIN}size=50G
+msg_ok "Imported disk attached to VM"
+
+# Set the boot order
+qm set $VMID --boot order=scsi0
+msg_ok "Boot order set to scsi0"
+
+qm set $VMID -serial0 socket \
   -description "<div align='center'>
 
   # Satisfactory Game Server
@@ -494,7 +466,6 @@ qm set $VMID -boot order=scsi0 -serial0 socket \
 
 <script type='text/javascript' src='https://storage.ko-fi.com/cdn/widget/Widget_2.js'></script><script type='text/javascript'>kofiwidget2.init('Support me on Ko-fi', '#0d7d07', 'H2H815OTBU');kofiwidget2.draw();</script> 
   </div>" >/dev/null
-msg_ok "Disks attached to VM"
 
 # Cloud-Init Configuration
 
