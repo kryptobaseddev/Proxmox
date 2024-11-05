@@ -356,79 +356,56 @@ echo
 ROOT_PASSWORD_HASH=$(echo "${ROOT_PASSWORD}" | openssl passwd -6 -stdin)
 STEAM_PASSWORD_HASH=$(echo "${STEAM_PASSWORD}" | openssl passwd -6 -stdin)
 
-msg_info "Validating Storage"
+msg_info "Listing Available Storage Pools"
 
-STORAGE_MENU=()
-SNIPPETS_STORAGE=()
-
-declare -A storages
-
-current_storage=""
+# List all storage pools
+STORAGE_OPTIONS=()
 while IFS= read -r line; do
-  # Match storage definitions
-  if [[ $line =~ ^(dir|lvm|lvmthin|zfspool):\s*(\S+) ]]; then
+  if [[ $line =~ ^(dir|lvm|lvmthin|zfspool|nfs):\s*(\S+) ]]; then
     TYPE=${BASH_REMATCH[1]}
     TAG=${BASH_REMATCH[2]}
-    storages[$TAG,type]=$TYPE
-    current_storage=$TAG
-  # Match content definitions
-  elif [[ $line =~ ^\s*content\s+(.+) ]]; then
-    CONTENT=${BASH_REMATCH[1]}
-    storages[$current_storage,content]=$CONTENT
-    # Check for 'images' content type
-    if [[ $CONTENT == *"images"* ]]; then
-      ITEM="Type: ${storages[$current_storage,type]}"
-      STORAGE_MENU+=("$current_storage" "$ITEM" "OFF")
-    fi
-    # Check for 'snippets' content type
-    if [[ $CONTENT == *"snippets"* ]]; then
-      SNIPPETS_STORAGE+=("$current_storage")
-    fi
+    STORAGE_OPTIONS+=("$TAG" "Type: $TYPE" "OFF")
   fi
 done < /etc/pve/storage.cfg
 
-# Check if any storage pools with 'images' content type are found
-if [ ${#STORAGE_MENU[@]} -eq 0 ]; then
-  msg_error "No storage pools with 'images' content type found."
-  echo -e "Please configure a storage pool with 'Disk image' enabled."
+if [ ${#STORAGE_OPTIONS[@]} -eq 0 ]; then
+  msg_error "No storage pools found."
+  echo -e "Please configure a storage pool."
   exit 1
 fi
 
-# Check if any storage pools with 'snippets' content type are found
-if [ ${#SNIPPETS_STORAGE[@]} -eq 0 ]; then
-  msg_error "No storage pools with 'snippets' content type found."
-  echo -e "Please configure a storage pool with 'Snippets' enabled."
-  exit 1
-fi
-
-# Storage selection for VM disks
-if [ $((${#STORAGE_MENU[@]} / 3)) -eq 1 ]; then
-  STORAGE=${STORAGE_MENU[0]}
+# Select storage for VM disks
+if [ $((${#STORAGE_OPTIONS[@]} / 3)) -eq 1 ]; then
+  STORAGE=${STORAGE_OPTIONS[0]}
 else
   while [ -z "${STORAGE:+x}" ]; do
-    STORAGE=$(whiptail --backtitle "Proxmox VE Helper Scripts" --title "Storage Pools" --radiolist \
-      "Which storage pool would you like to use for VM disks?\nTo make a selection, use the Spacebar.\n" \
+    STORAGE=$(whiptail --backtitle "Proxmox VE Helper Scripts" --title "Select VM Disk Storage" --radiolist \
+      "Which storage pool would you like to use for VM disks?\nEnsure it has 'Disk image' content enabled.\nTo make a selection, use the Spacebar.\n" \
       16 58 6 \
-      "${STORAGE_MENU[@]}" 3>&1 1>&2 2>&3) || exit
+      "${STORAGE_OPTIONS[@]}" 3>&1 1>&2 2>&3) || exit-script
   done
 fi
 msg_ok "Using ${CL}${BL}$STORAGE${CL} ${GN}for VM disk storage."
 
-# Storage selection for cloud-init snippets
-if [ ${#SNIPPETS_STORAGE[@]} -eq 1 ]; then
-  CLOUDINIT_STORAGE=${SNIPPETS_STORAGE[0]}
+# Select storage for cloud-init snippets
+if [ $((${#STORAGE_OPTIONS[@]} / 3)) -eq 1 ]; then
+  CLOUDINIT_STORAGE=${STORAGE_OPTIONS[0]}
 else
-  # Prefer 'local' storage if available
-  if [[ " ${SNIPPETS_STORAGE[@]} " =~ " local " ]]; then
-    CLOUDINIT_STORAGE="local"
-  else
-    CLOUDINIT_STORAGE="${SNIPPETS_STORAGE[0]}"
-  fi
+  while [ -z "${CLOUDINIT_STORAGE:+x}" ]; do
+    CLOUDINIT_STORAGE=$(whiptail --backtitle "Proxmox VE Helper Scripts" --title "Select Cloud-Init Storage" --radiolist \
+      "Which storage pool would you like to use for cloud-init configuration?\nEnsure it has 'Snippets' content enabled.\nTo make a selection, use the Spacebar.\n" \
+      16 58 6 \
+      "${STORAGE_OPTIONS[@]}" 3>&1 1>&2 2>&3) || exit-script
+  done
 fi
 msg_ok "Using ${CL}${BL}$CLOUDINIT_STORAGE${CL} ${GN}for cloud-init storage."
 
-# Get storage type from the associative array
-STORAGE_TYPE=${storages[$STORAGE,type]}
+# Get storage type
+STORAGE_TYPE=$(pvesm status -storage $STORAGE | awk 'NR>1 {print $2}')
+if [ -z "$STORAGE_TYPE" ]; then
+  # If pvesm status doesn't return a storage type, get it from storage.cfg
+  STORAGE_TYPE=$(grep -A1 "^.*$STORAGE" /etc/pve/storage.cfg | grep "^type" | awk '{print $2}')
+fi
 
 msg_ok "Virtual Machine ID is ${CL}${BL}$VMID${CL}."
 msg_info "Retrieving the URL for the Debian 12 Qcow2 Disk Image"
