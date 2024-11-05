@@ -436,6 +436,15 @@ msg_info "Creating a Debian 12 VM"
 qm create $VMID -agent 1${MACHINE} -tablet 0 -localtime 1 -bios ovmf -cpu $CPU_TYPE -cores $CORE_COUNT -memory $RAM_SIZE \
   -name $HN -tags gameserver-steam -net0 virtio,bridge=$BRG,macaddr=$MAC$VLAN$MTU -onboot 1 -ostype l26 -scsihw virtio-scsi-pci \
   -ide2 $CLOUDINIT_STORAGE:cloudinit
+msg_ok "VM $VMID created"
+
+# Allocate and attach the EFI disk
+EFI_DISK_SIZE="1M"
+EFI_DISK_REF="$STORAGE:vm-$VMID-disk-efi"
+msg_info "Allocating EFI disk"
+pvesm alloc $STORAGE $VMID vm-$VMID-disk-efi $EFI_DISK_SIZE
+qm set $VMID -efidisk0 $EFI_DISK_REF${FORMAT}
+msg_ok "EFI disk allocated and attached"
 
 # Import the disk
 if [[ "$STORAGE_TYPE" == "dir" || "$STORAGE_TYPE" == "nfs" ]]; then
@@ -456,10 +465,9 @@ if [ -z "$IMPORTED_DISK" ]; then
   exit 1
 fi
 
-# Set the VM disks
+# Attach the disk to the VM
 msg_info "Attaching disks to VM"
 qm set $VMID \
-  -efidisk0 $STORAGE:0${FORMAT} \
   -scsi0 $STORAGE:$IMPORTED_DISK${DISK_OPTIONS:+,$DISK_OPTIONS} \
   -boot order=scsi0 \
   -serial0 socket \
