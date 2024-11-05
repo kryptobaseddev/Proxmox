@@ -135,7 +135,7 @@ function exit-script() {
 
 function default_settings() {
   VMID="$NEXTID"
-  FORMAT=",efitype=4m"
+  FORMAT=""
   MACHINE=""
   DISK_CACHE=""
   HN="satisfactory-server"
@@ -423,23 +423,13 @@ msg_ok "Downloaded ${CL}${BL}${FILE}${CL}"
 
 # Determine storage type and adjust settings accordingly
 STORAGE_TYPE=$(pvesm status -storage $STORAGE | awk 'NR>1 {print $2}')
-# Prepare disk names and references
-EFI_DISK_SIZE="4M"
-EFI_DISK_NAME="vm-${VMID}-efidisk0"
-EFI_DISK_REF="$STORAGE:$EFI_DISK_NAME"
 
-# Create VM and allocate disks
+# Create VM
 msg_info "Creating a Debian 12 VM"
-qm create $VMID -agent 1 -localtime 1 -bios ovmf -cpu $CPU_TYPE -cores $CORE_COUNT -memory $RAM_SIZE \
+qm create $VMID -agent 1 -localtime 1 -bios seabios -cpu $CPU_TYPE -cores $CORE_COUNT -memory $RAM_SIZE \
   -name $HN -net0 virtio,bridge=$BRG,macaddr=$MAC$VLAN$MTU -onboot 1 -ostype l26 \
   -ide2 ${STORAGE}:cloudinit
 msg_ok "VM $VMID created"
-
-# Allocate and attach the EFI disk
-msg_info "Allocating EFI disk"
-pvesm alloc $STORAGE $VMID $EFI_DISK_NAME $EFI_DISK_SIZE
-qm set $VMID -efidisk0 $EFI_DISK_REF,efitype=4m
-msg_ok "EFI disk allocated and attached"
 
 # Import the disk image
 msg_info "Importing the disk image to storage"
