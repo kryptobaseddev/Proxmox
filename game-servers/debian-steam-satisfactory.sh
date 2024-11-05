@@ -446,10 +446,11 @@ msg_info "Importing the disk image to storage"
 qm importdisk $VMID ${FILE} $STORAGE
 msg_ok "Disk image imported to storage"
 
+# Get the imported disk reference
+IMPORTED_DISK_REF=$(qm config $VMID | grep '^unused' | cut -d ' ' -f2)
+
 # Attach the imported disk
 msg_info "Attaching imported disk to VM"
-# Exclude the EFI disk when listing disks
-IMPORTED_DISK_REF=$(pvesm list $STORAGE --vmid $VMID | awk 'NR>1 {print $1}' | grep -v "$EFI_DISK_NAME" | head -n 1)
 qm set $VMID --scsi0 $IMPORTED_DISK_REF,${DISK_CACHE}${THIN}size=50G
 msg_ok "Imported disk attached to VM"
 
