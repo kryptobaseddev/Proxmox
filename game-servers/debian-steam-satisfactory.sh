@@ -413,43 +413,35 @@ echo -en "\e[1A\e[0K"
 FILE=$(basename $URL)
 msg_ok "Downloaded ${CL}${BL}${FILE}${CL}"
 
-case $STORAGE_TYPE in
-nfs | dir)
-  DISK_EXT=".qcow2"
-  DISK_REF="$VMID/"
-  DISK_IMPORT="-format qcow2"
-  THIN=""
-  ;;
-btrfs | lvmthin | zfspool)
-  DISK_EXT=".raw"
-  DISK_REF=""
-  DISK_IMPORT="-format raw"
-  FORMAT=",efitype=4m"
-  THIN=""
-  ;;
-*)
-  DISK_EXT=".raw"
-  DISK_REF=""
-  DISK_IMPORT="-format raw"
-  FORMAT=",efitype=4m"
-  THIN=""
-  ;;
-esac
-for i in {0,1}; do
-  disk="DISK$i"
-  eval DISK${i}=vm-${VMID}-disk-${i}${DISK_EXT:-}
-  eval DISK${i}_REF=${STORAGE}:${DISK_REF:-}${!disk}
-done
-
 msg_info "Creating a Debian 12 VM"
 qm create $VMID -agent 1${MACHINE} -tablet 0 -localtime 1 -bios ovmf -cpu $CPU_TYPE -cores $CORE_COUNT -memory $RAM_SIZE \
   -name $HN -tags gameserver-steam -net0 virtio,bridge=$BRG,macaddr=$MAC$VLAN$MTU -onboot 1 -ostype l26 -scsihw virtio-scsi-pci \
   -ide2 $CLOUDINIT_STORAGE:cloudinit
-pvesm alloc $STORAGE $VMID $DISK0 4M 1>&/dev/null
-qm importdisk $VMID ${FILE} $STORAGE ${DISK_IMPORT:-} 1>&/dev/null
+
+# Import the disk
+if [[ "$STORAGE_TYPE" == "dir" || "$STORAGE_TYPE" == "nfs" ]]; then
+  DISK_FORMAT="qcow2"
+else
+  DISK_FORMAT="raw"
+fi
+
+msg_info "Importing the disk image to storage"
+qm importdisk $VMID ${FILE} $STORAGE --format $DISK_FORMAT
+msg_ok "Disk image imported to storage"
+
+# Get the imported disk name
+IMPORTED_DISK=$(pvesm list $STORAGE --vmid $VMID | awk 'NR==1 {print $2}')
+
+if [ -z "$IMPORTED_DISK" ]; then
+  msg_error "Failed to locate the imported disk."
+  exit 1
+fi
+
+# Set the VM disks
+msg_info "Attaching disks to VM"
 qm set $VMID \
-  -efidisk0 ${DISK0_REF}${FORMAT} \
-  -scsi0 ${DISK1_REF},${DISK_CACHE}${THIN}size=50G \
+  -efidisk0 $STORAGE:0${FORMAT} \
+  -scsi0 $STORAGE:$IMPORTED_DISK${DISK_CACHE}${THIN} \
   -boot order=scsi0 \
   -serial0 socket \
   -description "<div align='center'>
@@ -459,6 +451,7 @@ qm set $VMID \
 
 <script type='text/javascript' src='https://storage.ko-fi.com/cdn/widget/Widget_2.js'></script><script type='text/javascript'>kofiwidget2.init('Support me on Ko-fi', '#0d7d07', 'H2H815OTBU');kofiwidget2.draw();</script> 
   </div>" >/dev/null
+msg_ok "Disks attached to VM"
 
 # Cloud-Init Configuration
 
