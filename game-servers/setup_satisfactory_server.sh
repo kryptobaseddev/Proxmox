@@ -140,7 +140,8 @@ header "Installing Satisfactory Dedicated Server"
 info "Installing Satisfactory Dedicated Server. This may take a while..."
 
 # Run SteamCMD to install the server
-sudo -u steam steamcmd +login anonymous +force_install_dir /home/steam/SatisfactoryDedicatedServer +app_update 1690800 validate +quit
+# Export PATH within the command
+su - steam -c 'export PATH=$PATH:/usr/games && steamcmd +login anonymous +force_install_dir /home/steam/SatisfactoryDedicatedServer +app_update 1690800 validate +quit'
 
 success "Satisfactory Dedicated Server installed."
 
