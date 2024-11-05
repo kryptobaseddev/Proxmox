@@ -162,7 +162,6 @@ function default_settings() {
   echo -e "${BL}Creating a Debian 12 VM using the above default settings${CL}"
 }
 
-# Assuming advanced_settings function remains unchanged
 
 function advanced_settings() {
   while true; do
@@ -450,7 +449,7 @@ msg_ok "Disk image imported to storage"
 # Attach the imported disk
 msg_info "Attaching imported disk to VM"
 # Exclude the EFI disk when listing disks
-IMPORTED_DISK_REF=$(pvesm list $STORAGE --vmid $VMID | awk '{print $1}' | grep -v "efidisk0" | head -n 1)
+IMPORTED_DISK_REF=$(pvesm list $STORAGE --vmid $VMID | awk 'NR>1 {print $1}' | grep -v "$EFI_DISK_NAME" | head -n 1)
 qm set $VMID --scsi0 $IMPORTED_DISK_REF,${DISK_CACHE}${THIN}size=50G
 msg_ok "Imported disk attached to VM"
 
