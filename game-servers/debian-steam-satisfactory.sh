@@ -161,7 +161,6 @@ function default_settings() {
   echo -e "${BL}Creating a Debian 12 VM using the above default settings${CL}"
 }
 
-
 function advanced_settings() {
   while true; do
     if VMID=$(whiptail --backtitle "Proxmox VE Helper Scripts" --inputbox "Set Virtual Machine ID" 8 58 $NEXTID --title "VIRTUAL MACHINE ID" --cancel-button Exit-Script 3>&1 1>&2 2>&3); then
