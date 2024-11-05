@@ -14,7 +14,7 @@ function header_info {
 ╚█████╗░███████║░░░██║░░░██║╚█████╗░█████╗░░███████║██║░░╚═╝░░░██║░░░██║░░██║██████╔╝░╚████╔╝░
 ░╚═══██╗██╔══██║░░░██║░░░██║░╚═══██╗██╔══╝░░██╔══██║██║░░██╗░░░██║░░░██║░░██║██╔══██╗░░╚██╔╝░░
 ██████╔╝██║░░██║░░░██║░░░██║██████╔╝██║░░░░░██║░░██║╚█████╔╝░░░██║░░░╚█████╔╝██║░░██║░░░██║░░░
-╚═════╝░╚═╝░░╚═╝░░░╚═╝░░░╚═╝╚═════╝░╚═╝░░░░░╚═╝░░╚═╝░╚════╝░░░░╚═╝░░░░╚════╝░╚═╝░░╚═╝░░░╚═╝░░░ 
+╚═════╝░╚═╝░░╚═╝░░░╚═╝░░░╚═╝╚═════╝░╚═╝░░░░░╚═╝░░╚═╝░╚════╝░░░░╚═╝░░░░╚════╝░╚═╝░░╚═╝░░░╚═╝░░░
                 Satisfactory Game Server
                 Running on Debian 12
 
@@ -482,9 +482,9 @@ msg_info "Attaching disks to VM"
 if [ "$STORAGE_TYPE" = "lvmthin" ] || [ "$STORAGE_TYPE" = "lvm" ]; then
   # For LVM storage, imported disk is referenced directly
   IMPORTED_DISK_REF=$(pvesm list $STORAGE | grep "vm-${VMID}-disk-" | awk '{print $1}' | head -n1)
-  qm set $VMID -scsi0 ${IMPORTED_DISK_REF},${DISK_CACHE}${THIN}size=32G
+  qm set $VMID -scsi0 ${IMPORTED_DISK_REF},${DISK_CACHE}${THIN}size=50G
 else
-  qm set $VMID -scsi0 ${DISK1_REF},${DISK_CACHE}${THIN}size=32G
+  qm set $VMID -scsi0 ${DISK1_REF},${DISK_CACHE}${THIN}size=50G
 fi
 qm set $VMID -boot order=scsi0 -serial0 socket \
   -description "<div align='center'>
