@@ -88,7 +88,8 @@ add-apt-repository -y -n -U http://deb.debian.org/debian -c non-free -c non-free
 add-apt-repository -y -n -U http://deb.debian.org/debian -c non-free -c non-free-firmware
 
 # Update package lists
-apt-get update -qq
+info "Updating package lists..."
+apt-get update
 success "Repositories updated."
 
 # Install QEMU Guest Agent
@@ -109,7 +110,8 @@ success "Dependencies installed."
 
 # Install SteamCMD
 header "Installing SteamCMD"
-check_and_install "steamcmd"
+info "Installing SteamCMD..."
+apt-get install -y steamcmd
 success "SteamCMD installed."
 
 # Create a steam user (if not already existing)
@@ -136,13 +138,16 @@ success "Server directory created."
 # Install Satisfactory Dedicated Server using SteamCMD
 header "Installing Satisfactory Dedicated Server"
 info "Installing Satisfactory Dedicated Server. This may take a while..."
-sudo -u steam bash -c "steamcmd +login anonymous +force_install_dir /home/steam/SatisfactoryDedicatedServer +app_update 1690800 validate +quit" > /dev/null
+
+# Run SteamCMD to install the server
+sudo -u steam steamcmd +login anonymous +force_install_dir /home/steam/SatisfactoryDedicatedServer +app_update 1690800 validate +quit
+
 success "Satisfactory Dedicated Server installed."
 
 # Create systemd service for Satisfactory server
 header "Configuring Systemd Service"
 info "Creating systemd service file..."
-bash -c 'cat > /etc/systemd/system/satisfactory.service <<EOF
+cat > /etc/systemd/system/satisfactory.service <<EOF
 [Unit]
 Description=Satisfactory Dedicated Server
 After=network.target
@@ -156,7 +161,7 @@ Restart=on-failure
 
 [Install]
 WantedBy=multi-user.target
-EOF'
+EOF
 success "Systemd service file created."
 
 # Reload systemd daemon and enable the service
